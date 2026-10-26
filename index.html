@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="ru" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Метеостанция & Умный Дом (TG + MAX)</title>
+    <!-- Telegram & Mini App WebApp SDK -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; font-family: system-ui, -apple-system, sans-serif; }
+        .card { background: #1e293b; border: 1px solid #334155; border-radius: 1rem; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+    </style>
+</head>
+<body class="min-h-screen p-3 sm:p-6 md:p-8">
+
+    <!-- Всплывающее уведомление (Toast) -->
+    <div id="toast" class="fixed bottom-5 right-5 z-50 hidden bg-slate-800 border border-slate-600 text-slate-100 px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 text-sm transition-all">
+        <i id="toast-icon" class="fa-solid fa-paper-plane text-sky-400"></i>
+        <span id="toast-text">Сообщение отправлено</span>
+    </div>
+
+    <div class="max-w-7xl mx-auto space-y-6">
+        
+        <!-- Шапка -->
+        <header class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 border-b border-slate-700 pb-4">
+            <div>
+                <div class="flex items-center gap-2">
+                    <h1 class="text-xl sm:text-2xl md:text-3xl font-bold flex items-center gap-3">
+                        <i class="fa-solid fa-house-signal text-sky-400"></i>
+                        Метеостанция & Умный Дом
+                    </h1>
+                    <span id="miniapp-badge" class="hidden px-2.5 py-0.5 rounded-md text-[11px] font-semibold bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                        Mini App
+                    </span>
+                </div>
+                <p id="user-greeting" class="text-slate-400 text-xs sm:text-sm mt-1">Локальная панель мониторинга климата, камер и автоматизации</p>
+            </div>
+
+            <!-- Панель быстрых действий: MAX и Telegram -->
+            <div class="flex flex-wrap items-center gap-2 sm:gap-3 w-full lg:w-auto justify-between lg:justify-end">
+                <div class="flex items-center gap-2">
+                    <button onclick="sendReportToMessengers()" class="px-3 py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white shadow-lg shadow-sky-500/20 flex items-center gap-2 transition">
+                        <i class="fa-solid fa-paper-plane"></i>
+                        <span>Сводка в ТГ и MAX</span>
+                    </button>
+                    <button onclick="toggleMessengerModal(true)" class="px-3 py-2 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 flex items-center gap-2 transition">
+                        <i class="fa-brands fa-telegram text-sky-400 text-sm"></i>
+                        <span class="font-bold text-indigo-400">MAX</span>
+                        <i class="fa-solid fa-gear text-slate-400"></i>
+                    </button>
+                </div>
+
+                <div class="flex items-center gap-3">
+                    <span id="status-badge" class="px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        Онлайн
+                    </span>
+                    <span id="last-update" class="text-slate-400 text-xs hidden sm:inline">--:--:--</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Статус интеграции с мессенджерами -->
+        <div class="card p-4 bg-slate-800/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div class="flex items-center gap-3 text-sm">
+                <div class="w-9 h-9 rounded-lg bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 shrink-0">
+                    <i class="fa-solid fa-bell"></i>
+                </div>
+                <div>
+                    <div class="font-medium flex flex-wrap items-center gap-2">
+                        <span>Интеграция с мессенджерами:</span>
+                        <span id="tg-status-pill" class="text-[11px] px-2 py-0.5 rounded bg-slate-700 text-slate-300">Telegram: Демо</span>
+                        <span id="max-status-pill" class="text-[11px] px-2 py-0.5 rounded bg-slate-700 text-slate-300">MAX: Демо</span>
+                    </div>
+                    <p class="text-xs text-slate-400 mt-0.5">Авто-оповещения при выходе температуры или CO₂ за пределы нормы и при переключении устройств</p>
+                </div>
+            </div>
+            <button onclick="toggleMessengerModal(true)" class="text-xs text-sky-400 hover:text-sky-300 font-medium shrink-0 underline">
+                Настроить ботов и пороги →
+            </button>
+        </div>
+
+        <!-- Блок 1: Метеодатчики -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- Улица -->
+            <div class="card p-5 flex flex-col justify-between">
+                <div class="flex justify-between items-start">
+                    <span class="text-slate-400 font-medium text-sm">На улице</span>
+                    <i class="fa-solid fa-tree text-emerald-400 text-xl"></i>
+                </div>
+                <div class="my-4">
+                    <div class="text-4xl font-bold tracking-tight">
+                        <span id="out-temp">14.2</span><span class="text-2xl text-slate-400">°C</span>
+                    </div>
+                    <div class="text-xs text-slate-400 mt-1">Ощущается как <span id="out-feels">13.0</span>°C</div>
+                </div>
+                <div class="flex items-center justify-between text-sm border-t border-slate-700/60 pt-3">
+                    <span class="text-slate-400"><i class="fa-solid fa-droplet text-sky-400 mr-1"></i> Влажность</span>
+                    <span class="font-semibold"><span id="out-hum">68</span>%</span>
+                </div>
+            </div>
+
+            <!-- Дом -->
+            <div class="card p-5 flex flex-col justify-between">
+                <div class="flex justify-between items-start">
+                    <span class="text-slate-400 font-medium text-sm">В доме (Гостиная)</span>
+                    <i class="fa-solid fa-house text-indigo-400 text-xl"></i>
+                </div>
+                <div class="my-4">
+                    <div class="text-4xl font-bold tracking-tight">
+                        <span id="in-temp">22.5</span><span class="text-2xl text-slate-400">°C</span>
+                    </div>
+                    <div class="text-xs text-emerald-400 mt-1">Комфортная норма</div>
+                </div>
+                <div class="flex items-center justify-between text-sm border-t border-slate-700/60 pt-3">
+                    <span class="text-slate-400"><i class="fa-solid fa-droplet text-sky-400 mr-1"></i> Влажность</span>
+                    <span class="font-semibold"><span id="in-hum">45</span>%</span>
+                </div>
+            </div>
+
+            <!-- Давление -->
+            <div class="card p-5 flex flex-col justify-between">
+                <div class="flex justify-between items-start">
+                    <span class="text-slate-400 font-medium text-sm">Давление</span>
+                    <i class="fa-solid fa-gauge-high text-amber-400 text-xl"></i>
+                </div>
+                <div class="my-4">
+                    <div class="text-4xl font-bold tracking-tight">
+                        <span id="pressure">748</span> <span class="text-lg font-normal text-slate-400">мм рт. ст.</span>
+                    </div>
+                    <div class="text-xs text-slate-400 mt-1"><span id="pressure-hpa">997</span> гПа</div>
+                </div>
+                <div class="flex items-center justify-between text-sm border-t border-slate-700/60 pt-3">
+                    <span class="text-slate-400">Тренд</span>
+                    <span class="text-amber-400 font-medium"><i class="fa-solid fa-arrow-trend-up mr-1"></i> Стабильно</span>
+                </div>
+            </div>
+
+            <!-- CO2 -->
+            <div class="card p-5 flex flex-col justify-between">
+                <div class="flex justify-between items-start">
+                    <span class="text-slate-400 font-medium text-sm">Воздух (CO₂)</span>
+                    <i class="fa-solid fa-wind text-teal-400 text-xl"></i>
+                </div>
+                <div class="my-4">
+                    <div class="text-4xl font-bold tracking-tight">
+                        <span id="co2">620</span> <span class="text-lg font-normal text-slate-400">ppm</span>
+                    </div>
+                    <div id="co2-status" class="text-xs text-emerald-400 mt-1">Отличное качество</div>
+                </div>
+                <div class="flex items-center justify-between text-sm border-t border-slate-700/60 pt-3">
+                    <span class="text-slate-400">Пыль PM2.5</span>
+                    <span class="font-semibold"><span id="pm25">8</span> мкг/м³</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Блок 2: Веб-камера и Список умных устройств -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <!-- Веб-камера (7 колонок) -->
+            <div class="card p-5 lg:col-span-7 flex flex-col justify-between">
+                <div class="flex flex-wrap justify-between items-center gap-2 mb-4">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-video text-rose-400"></i>
+                        <h2 class="text-lg font-semibold">Веб-камера (Двор / Терраса)</h2>
+                    </div>
+                    <div class="flex flex-wrap gap-2 text-xs">
+                        <button onclick="setCamMode('demo')" id="btn-cam-demo" class="px-3 py-1.5 rounded-lg bg-sky-500 text-white font-medium transition">Демо</button>
+                        <button onclick="setCamMode('webcam')" id="btn-cam-webcam" class="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 transition">
+                            <i class="fa-solid fa-camera mr-1"></i>Моя камера
+                        </button>
+                        <button onclick="setCamMode('ip')" id="btn-cam-ip" class="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 transition">
+                            <i class="fa-solid fa-network-wired mr-1"></i>IP-поток
+                        </button>
+                    </div>
+                </div>
+
+                <div id="ip-cam-input-box" class="hidden mb-3 flex gap-2">
+                    <input type="text" id="ip-cam-url" placeholder="Например: http://192.168.1.50:81/stream (ESP32-CAM)" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-sky-500">
+                    <button onclick="applyIpCamUrl()" class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-sm rounded-lg font-medium transition">ОК</button>
+                </div>
+
+                <div class="relative w-full h-72 sm:h-80 bg-slate-950 rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center">
+                    <div class="absolute top-3 left-3 z-10 flex items-center gap-2 bg-black/60 backdrop-blur-sm px-2.5 py-1 rounded-md text-xs font-mono">
+                        <span class="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
+                        <span class="text-rose-400 font-bold">LIVE</span>
+                        <span id="cam-osd-time" class="text-slate-300 ml-1">00:00:00</span>
+                    </div>
+                    <div class="absolute bottom-3 left-3 z-10 bg-black/60 backdrop-blur-sm px-2.5 py-1 rounded-md text-xs font-mono text-slate-300">
+                        CAM-01 • <span id="cam-osd-temp">14.2°C</span>
+                    </div>
+
+                    <div id="cam-view-demo" class="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-sky-950 text-center p-4">
+                        <i class="fa-solid fa-cloud-moon-rain text-5xl text-sky-400/70 mb-3 animate-pulse"></i>
+                        <p class="text-slate-300 font-medium text-sm">Демонстрационный поток камеры</p>
+                        <p class="text-slate-500 text-xs mt-1 max-w-md">Нажмите «Моя камера», чтобы включить камеру смартфона/ноутбука, или укажите адрес IP-камеры.</p>
+                    </div>
+
+                    <video id="cam-view-video" autoplay playsinline muted class="hidden w-full h-full object-cover"></video>
+                    <img id="cam-view-ip" src="" alt="IP Поток не подключен" class="hidden w-full h-full object-cover text-center text-slate-400 text-sm flex items-center justify-center">
+                </div>
+            </div>
+
+            <!-- Список умных устройств (5 колонок) -->
+            <div class="card p-5 lg:col-span-5 flex flex-col justify-between h-full">
+                <div>
+                    <div class="flex justify-between items-center mb-4">
+                        <div>
+                            <h2 class="text-lg font-semibold flex items-center gap-2">
+                                <i class="fa-solid fa-plug-circle-bolt text-indigo-400"></i>
+                                Умные устройства
+                            </h2>
+                            <p class="text-xs text-slate-400">Управление техникой и датчиками</p>
+                        </div>
+                        <button onclick="toggleDeviceModal(true)" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded-lg flex items-center gap-1.5 transition">
+                            <i class="fa-solid fa-plus"></i> Добавить
+                        </button>
+                    </div>
+
+                    <div id="devices-list" class="space-y-3 max-h-80 overflow-y-auto pr-1"></div>
+                </div>
+
+                <div class="mt-4 pt-3 border-t border-slate-700/60 flex justify-between items-center text-xs text-slate-400">
+                    <span>Активных: <strong id="active-devices-count" class="text-slate-200">0</strong></span>
+                    <button onclick="resetDefaultDevices()" class="hover:text-slate-200 underline">Сбросить список</button>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Блок 3: График истории -->
+        <div class="card p-5">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-semibold">Динамика температуры (24 часа)</h2>
+                <div class="flex gap-3 text-xs">
+                    <span class="flex items-center gap-1.5 text-slate-300"><span class="w-3 h-3 rounded-full bg-sky-400 inline-block"></span> Улица</span>
+                    <span class="flex items-center gap-1.5 text-slate-300"><span class="w-3 h-3 rounded-full bg-indigo-400 inline-block"></span> Дом</span>
+                </div>
+            </div>
+            <div class="relative h-60 w-full">
+                <canvas id="tempChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- МОДАЛЬНОЕ ОКНО 1: Настройка MAX и Telegram -->
+    <div id="messenger-modal" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="card w-full max-w-lg p-6 space-y-4 border border-slate-600 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center border-b border-slate-700 pb-3">
+                <h3 class="text-lg font-bold flex items-center gap-2">
+                    <i class="fa-brands fa-telegram text-sky-400"></i>
+                    Интеграция с Telegram и MAX
+                </h3>
+                <button onclick="toggleMessengerModal(false)" class="text-slate-400 hover:text-white">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <form onsubmit="saveMessengerConfig(event)" class="space-y-4 text-sm">
+                <!-- Настройки Telegram -->
+                <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-700/80 space-y-3">
+                    <div class="font-semibold text-sky-400 flex items-center justify-between">
+                        <span><i class="fa-brands fa-telegram mr-1.5"></i>Бот Telegram</span>
+                        <span class="text-[11px] text-slate-400 font-normal">Через @BotFather</span>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">Токен бота (Bot Token)</label>
+                        <input type="password" id="cfg-tg-token" placeholder="123456789:AAH..." class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-100 focus:outline-none focus:border-sky-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">ID чата или канала (Chat ID)</label>
+                        <input type="text" id="cfg-tg-chat" placeholder="Например: -100123456789 или 12345678" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-100 focus:outline-none focus:border-sky-500">
+                    </div>
+                </div>
+
+                <!-- Настройки MAX -->
+                <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-700/80 space-y-3">
+                    <div class="font-semibold text-indigo-400 flex items-center justify-between">
+                        <span><i class="fa-solid fa-comment-dots mr-1.5"></i>Мессенджер MAX (Бот / Вебхук)</span>
+                        <span class="text-[11px] text-slate-400 font-normal">Прямой API или Мост ТГ↔MAX</span>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">URL вебхука или API-эндпоинт бота в MAX</label>
+                        <input type="text" id="cfg-max-webhook" placeholder="https://api.max.ru/... или вебхук моста" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-100 focus:outline-none focus:border-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">ID чата / Токен авторизации MAX (опционально)</label>
+                        <input type="text" id="cfg-max-token" placeholder="Токен или ID получателя в MAX" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-100 focus:outline-none focus:border-indigo-500">
+                    </div>
+                </div>
+
+                <!-- Триггеры авто-уведомлений -->
+                <div class="p-3.5 rounded-xl bg-slate-900/50 border border-slate-800 space-y-2">
+                    <div class="font-medium text-slate-200 text-xs uppercase tracking-wider">Условия автоматической тревоги</div>
+                    <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                        <input type="checkbox" id="cfg-notify-devices" checked class="rounded bg-slate-800 border-slate-600 text-sky-500">
+                        Уведомлять при включении/выключении умных устройств
+                    </label>
+                    <div class="grid grid-cols-2 gap-2 pt-1">
+                        <div>
+                            <label class="block text-[11px] text-slate-400">Мин. температура в доме (°C)</label>
+                            <input type="number" id="cfg-min-temp" value="10" class="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] text-slate-400">Макс. уровень CO₂ (ppm)</label>
+                            <input type="number" id="cfg-max-co2" value="1000" class="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-between items-center pt-2 border-t border-slate-700">
+                    <button type="button" onclick="sendReportToMessengers()" class="text-xs text-sky-400 hover:underline">
+                        Проверить отправку сейчас
+                    </button>
+                    <div class="flex gap-2">
+                        <button type="button" onclick="toggleMessengerModal(false)" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300">Отмена</button>
+                        <button type="submit" class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium">Сохранить</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- МОДАЛЬНОЕ ОКНО 2: Добавление умного устройства -->
+    <div id="device-modal" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="card w-full max-w-md p-6 space-y-4 border border-slate-600 shadow-2xl">
+            <div class="flex justify-between items-center border-b border-slate-700 pb-3">
+                <h3 class="text-lg font-bold">Добавить умное устройство</h3>
+                <button onclick="toggleDeviceModal(false)" class="text-slate-400 hover:text-white">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <form id="add-device-form" onsubmit="addNewDevice(event)" class="space-y-4 text-sm">
+                <div>
+                    <label class="block text-slate-300 mb-1">Название устройства</label>
+                    <input type="text" id="dev-name" required placeholder="Например: Увлажнитель в спальне" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-indigo-500">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-slate-300 mb-1">Тип устройства</label>
+                        <select id="dev-type" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100">
+                            <option value="light">💡 Освещение</option>
+                            <option value="socket">🔌 Розетка / Реле</option>
+                            <option value="humidifier">💧 Увлажнитель</option>
+                            <option value="vacuum">🧹 Робот-пылесос</option>
+                            <option value="sensor">📡 Датчик</option>
+                            <option value="hub">🔊 Станция / Хаб</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-slate-300 mb-1">Экосистема</label>
+                        <select id="dev-brand" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100">
+                            <option value="Яндекс">Яндекс</option>
+                            <option value="Aqara">Aqara</option>
+                            <option value="Xiaomi">Xiaomi</option>
+                            <option value="Yeelight">Yeelight</option>
+                            <option value="ESPHome">ESP32 / DIY</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-slate-300 mb-1">Комната или IP</label>
+                    <input type="text" id="dev-meta" placeholder="Например: Гостиная • 192.168.1.45" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100">
+                </div>
+                <div class="flex justify-end gap-2 pt-2 border-t border-slate-700">
+                    <button type="button" onclick="toggleDeviceModal(false)" class="px-4 py-2 rounded-lg bg-slate-800 text-slate-300">Отмена</button>
+                    <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white font-medium">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================================
+        // 0. ИНИЦИАЛИЗАЦИЯ MINI APP (ДЛЯ ВСТРОЕННОГО ОТКРЫТИЯ В TG И MAX)
+        // ==========================================================
+        function initMiniAppEnvironment() {
+            const tg = window.Telegram?.WebApp;
+            const isMaxWebView = navigator.userAgent.toLowerCase().includes('max') || window.location.search.includes('platform=max');
+
+            if (tg && tg.initDataUnsafe && Object.keys(tg.initDataUnsafe).length > 0) {
+                tg.ready();
+                tg.expand();
+                document.getElementById('miniapp-badge').classList.remove('hidden');
+                document.getElementById('miniapp-badge').textContent = 'Telegram Mini App';
+                if (tg.initDataUnsafe.user?.first_name) {
+                    document.getElementById('user-greeting').textContent = `Привет, ${tg.initDataUnsafe.user.first_name}! Панель управления домом активна.`;
+                }
+            } else if (isMaxWebView) {
+                document.getElementById('miniapp-badge').classList.remove('hidden');
+                document.getElementById('miniapp-badge').textContent = 'MAX Mini App';
+            }
+        }
+
+        // Показ всплывающих уведомлений на экране
+        function showToast(message, isAlert = false) {
+            const toast = document.getElementById('toast');
+            const icon = document.getElementById('toast-icon');
+            document.getElementById('toast-text').textContent = message;
+            icon.className = isAlert ? 'fa-solid fa-triangle-exclamation text-amber-400' : 'fa-solid fa-paper-plane text-sky-400';
+            toast.classList.remove('hidden');
+            setTimeout(() => toast.classList.add('hidden'), 4000);
+        }
+
+        // ==========================================================
+        // 1. ИНТЕГРАЦИЯ И ОТПРАВКА СООБЩЕНИЙ В TELEGRAM И MAX
+        // ==========================================================
+        let messengerConfig = JSON.parse(localStorage.getItem('weather_messenger_cfg')) || {
+            tgToken: '',
+            tgChat: '',
+            maxWebhook: '',
+            maxToken: '',
+            notifyDevices: true,
+            minTemp: 10,
+            maxCo2: 1000
+        };
+
+        function loadMessengerUI() {
+            document.getElementById('cfg-tg-token').value = messengerConfig.tgToken || '';
+            document.getElementById('cfg-tg-chat').value = messengerConfig.tgChat || '';
+            document.getElementById('cfg-max-webhook').value = messengerConfig.maxWebhook || '';
+            document.getElementById('cfg-max-token').value = messengerConfig.maxToken || '';
+            document.getElementById('cfg-notify-devices').checked = messengerConfig.notifyDevices !== false;
+            document.getElementById('cfg-min-temp').value = messengerConfig.minTemp ?? 10;
+            document.getElementById('cfg-max-co2').value = messengerConfig.maxCo2 ?? 1000;
+
+            const tgPill = document.getElementById('tg-status-pill');
+            const maxPill = document.getElementById('max-status-pill');
+
+            if (messengerConfig.tgToken && messengerConfig.tgChat) {
+                tgPill.textContent = 'Telegram: Подключен';
+                tgPill.className = 'text-[11px] px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30';
+            } else {
+                tgPill.textContent = 'Telegram: Демо-режим';
+                tgPill.className = 'text-[11px] px-2 py-0.5 rounded bg-slate-700 text-slate-300';
+            }
+
+            if (messengerConfig.maxWebhook) {
+                maxPill.textContent = 'MAX: Подключен';
+                maxPill.className = 'text-[11px] px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30';
+            } else {
+                maxPill.textContent = 'MAX: Демо-режим';
+                maxPill.className = 'text-[11px] px-2 py-0.5 rounded bg-slate-700 text-slate-300';
+            }
+        }
+
+        function saveMessengerConfig(e) {
+            e.preventDefault();
+            messengerConfig = {
+                tgToken: document.getElementById('cfg-tg-token').value.trim(),
+                tgChat: document.getElementById('cfg-tg-chat').value.trim(),
+                maxWebhook: document.getElementById('cfg-max-webhook').value.trim(),
+                maxToken: document.getElementById('cfg-max-token').value.trim(),
+                notifyDevices: document.getElementById('cfg-notify-devices').checked,
+                minTemp: Number(document.getElementById('cfg-min-temp').value),
+                maxCo2: Number(document.getElementById('cfg-max-co2').value)
+            };
+            localStorage.setItem('weather_messenger_cfg', JSON.stringify(messengerConfig));
+            loadMessengerUI();
+            toggleMessengerModal(false);
+            showToast('Настройки Telegram и MAX сохранены!');
+        }
+
+        // Универсальная функция отправки текста в Telegram и MAX
+        async function pushMessageToMessengers(text) {
+            let sentSomewhere = false;
+
+            // 1. Отправка в Telegram Bot API
+            if (messengerConfig.tgToken && messengerConfig.tgChat) {
+                try {
+                    await fetch(`https://api.telegram.org/bot${messengerConfig.tgToken}/sendMessage`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            chat_id: messengerConfig.tgChat,
+                            text: text,
+                            parse_mode: 'HTML'
+                        })
+                    });
+                    sentSomewhere = true;
+                } catch (err) {
+                    console.error('Ошибка отправки в Telegram:', err);
+                }
+            }
+
+            // 2. Отправка в мессенджер MAX (через вебхук бота или мост)
+            if (messengerConfig.maxWebhook) {
+                try {
+                    await fetch(messengerConfig.maxWebhook, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            token: messengerConfig.maxToken,
+                            text: text.replace(/<[^>]*>?/gm, ''), // Чистый текст для MAX
+                            source: 'HomeWeatherStation'
+                        })
+                    });
+                    sentSomewhere = true;
+                } catch (err) {
+                    console.error('Ошибка отправки в MAX:', err);
+                }
+            }
+
+            if (sentSomewhere) {
+                showToast('Отправлено в подключенные мессенджеры (TG / MAX)');
+            } else {
+                showToast('Демо-отправка в TG и MAX выполнена (укажите токены в настройках)');
+            }
+        }
+
+        // Формирование полной сводки по кнопке «Сводка в ТГ и MAX»
+        function sendReportToMessengers() {
+            const outTemp = document.getElementById('out-temp').textContent;
+            const outHum = document.getElementById('out-hum').textContent;
+            const inTemp = document.getElementById('in-temp').textContent;
+            const inHum = document.getElementById('in-hum').textContent;
+            const pressure = document.getElementById('pressure').textContent;
+            const co2 = document.getElementById('co2').textContent;
+            const activeDevs = smartDevices.filter(d => d.active).map(d => `• ${d.name} (${d.brand})`).join('\n') || 'Нет активных';
+
+            const report = `🏠 <b>Сводка: Метеостанция & Умный дом</b>\n\n` +
+                           `🌳 <b>Улица:</b> ${outTemp}°C (Влажность ${outHum}%)\n` +
+                           `🛋 <b>Дом:</b> ${inTemp}°C (Влажность ${inHum}%)\n` +
+                           `🧭 <b>Давление:</b> ${pressure} мм рт. ст.\n` +
+                           `🍃 <b>Воздух CO₂:</b> ${co2} ppm\n\n` +
+                           `🔌 <b>Включенные устройства:</b>\n${activeDevs}`;
+
+            pushMessageToMessengers(report);
+        }
+
+        function toggleMessengerModal(show) {
+            document.getElementById('messenger-modal').classList.toggle('hidden', !show);
+        }
+
+        // ==========================================================
+        // 2. УПРАВЛЕНИЕ СПИСКОМ УМНЫХ УСТРОЙСТВ
+        // ==========================================================
+        const defaultDevices = [
+            { id: 1, name: 'Увлажнитель воздуха', type: 'humidifier', brand: 'Xiaomi', meta: 'Гостиная • Авто (45%)', active: true },
+            { id: 2, name: 'Подсветка террасы', type: 'light', brand: 'Yeelight', meta: 'Улица • Расписание', active: false },
+            { id: 3, name: 'Датчик протечки воды', type: 'sensor', brand: 'Aqara', meta: 'Ванная • Zigbee (Норма)', active: true },
+            { id: 4, name: 'Обогрев теплицы (Реле)', type: 'socket', brand: 'ESPHome', meta: '192.168.1.104', active: false }
+        ];
+
+        let smartDevices = JSON.parse(localStorage.getItem('weather_smart_devices')) || defaultDevices;
+
+        const typeIcons = {
+            light: { icon: 'fa-lightbulb', color: 'text-amber-400', bg: 'bg-amber-400/10' },
+            socket: { icon: 'fa-plug', color: 'text-sky-400', bg: 'bg-sky-400/10' },
+            humidifier: { icon: 'fa-droplet', color: 'text-cyan-400', bg: 'bg-cyan-400/10' },
+            vacuum: { icon: 'fa-robot', color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
+            sensor: { icon: 'fa-satellite-dish', color: 'text-purple-400', bg: 'bg-purple-400/10' },
+            hub: { icon: 'fa-tower-broadcast', color: 'text-rose-400', bg: 'bg-rose-400/10' }
+        };
+
+        function saveDevices() {
+            localStorage.setItem('weather_smart_devices', JSON.stringify(smartDevices));
+        }
+
+        function renderDevices() {
+            const container = document.getElementById('devices-list');
+            container.innerHTML = '';
+            let activeCount = 0;
+
+            smartDevices.forEach(dev => {
+                if (dev.active) activeCount++;
+                const style = typeIcons[dev.type] || typeIcons.socket;
+
+                const item = document.createElement('div');
+                item.className = `p-3 rounded-xl border transition flex items-center justify-between gap-3 ${dev.active ? 'bg-slate-800/90 border-slate-600' : 'bg-slate-900/50 border-slate-800 opacity-75'}`;
+                
+                item.innerHTML = `
+                    <div class="flex items-center gap-3 min-w-0">
+                        <div class="w-10 h-10 rounded-lg ${style.bg} ${style.color} flex items-center justify-center shrink-0">
+                            <i class="fa-solid ${style.icon} text-lg"></i>
+                        </div>
+                        <div class="truncate">
+                            <div class="font-medium text-sm text-slate-100 flex items-center gap-2 truncate">
+                                <span class="truncate">${dev.name}</span>
+                                <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 font-normal shrink-0">${dev.brand}</span>
+                            </div>
+                            <div class="text-xs text-slate-400 truncate">${dev.meta}</div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <button onclick="toggleDevice(${dev.id})" class="px-3 py-1 rounded-lg text-xs font-semibold transition ${dev.active ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}">
+                            ${dev.active ? 'ВКЛ' : 'ВЫКЛ'}
+                        </button>
+                        <button onclick="removeDevice(${dev.id})" class="text-slate-500 hover:text-rose-400 p-1 transition">
+                            <i class="fa-solid fa-trash-can text-xs"></i>
+                        </button>
+                    </div>
+                `;
+                container.appendChild(item);
+            });
+
+            document.getElementById('active-devices-count').textContent = `${activeCount} из ${smartDevices.length}`;
+        }
+
+        function toggleDevice(id) {
+            let changedDevice = null;
+            smartDevices = smartDevices.map(d => {
+                if (d.id === id) {
+                    changedDevice = { ...d, active: !d.active };
+                    return changedDevice;
+                }
+                return d;
+            });
+            saveDevices();
+            renderDevices();
+
+            if (changedDevice && messengerConfig.notifyDevices) {
+                const stateText = changedDevice.active ? '🟢 ВКЛЮЧЕНО' : '⚪ ВЫКЛЮЧЕНО';
+                pushMessageToMessengers(`⚡ <b>Устройство переключено:</b>\n${changedDevice.name} (${changedDevice.brand}) — ${stateText}`);
+            }
+        }
+
+        function removeDevice(id) {
+            smartDevices = smartDevices.filter(d => d.id !== id);
+            saveDevices();
+            renderDevices();
+        }
+
+        function addNewDevice(e) {
+            e.preventDefault();
+            const name = document.getElementById('dev-name').value.trim();
+            const type = document.getElementById('dev-type').value;
+            const brand = document.getElementById('dev-brand').value;
+            const meta = document.getElementById('dev-meta').value.trim() || 'Локальное устройство';
+
+            smartDevices.unshift({ id: Date.now(), name, type, brand, meta, active: true });
+            saveDevices();
+            renderDevices();
+            document.getElementById('add-device-form').reset();
+            toggleDeviceModal(false);
+        }
+
+        function resetDefaultDevices() {
+            smartDevices = [...defaultDevices];
+            saveDevices();
+            renderDevices();
+        }
+
+        function toggleDeviceModal(show) {
+            document.getElementById('device-modal').classList.toggle('hidden', !show);
+        }
+
+        // ==========================================================
+        // 3. ВЕБ-КАМЕРА И ГРАФИК ПОГОДЫ
+        // ==========================================================
+        let mediaStream = null;
+
+        async function setCamMode(mode) {
+            const viewDemo = document.getElementById('cam-view-demo');
+            const viewVideo = document.getElementById('cam-view-video');
+            const viewIp = document.getElementById('cam-view-ip');
+            const ipBox = document.getElementById('ip-cam-input-box');
+
+            ['demo', 'webcam', 'ip'].forEach(m => {
+                document.getElementById(`btn-cam-${m}`).className = (m === mode) 
+                    ? 'px-3 py-1.5 rounded-lg bg-sky-500 text-white font-medium transition'
+                    : 'px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 transition';
+            });
+
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+                mediaStream = null;
+            }
+
+            viewDemo.classList.add('hidden');
+            viewVideo.classList.add('hidden');
+            viewIp.classList.add('hidden');
+            ipBox.classList.add('hidden');
+
+            if (mode === 'demo') {
+                viewDemo.classList.remove('hidden');
+            } else if (mode === 'webcam') {
+                viewVideo.classList.remove('hidden');
+                try {
+                    mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                    viewVideo.srcObject = mediaStream;
+                } catch (err) {
+                    showToast('Доступ к камере отклонен браузером', true);
+                    setCamMode('demo');
+                }
+            } else if (mode === 'ip') {
+                ipBox.classList.remove('hidden');
+                viewIp.classList.remove('hidden');
+                const savedUrl = localStorage.getItem('weather_ip_cam_url');
+                if (savedUrl) {
+                    document.getElementById('ip-cam-url').value = savedUrl;
+                    viewIp.src = savedUrl;
+                }
+            }
+        }
+
+        function applyIpCamUrl() {
+            const url = document.getElementById('ip-cam-url').value.trim();
+            if (url) {
+                localStorage.setItem('weather_ip_cam_url', url);
+                document.getElementById('cam-view-ip').src = url;
+            }
+        }
+
+        setInterval(() => {
+            document.getElementById('cam-osd-time').textContent = new Date().toLocaleTimeString('ru-RU');
+        }, 1000);
+
+        const ctx = document.getElementById('tempChart').getContext('2d');
+        const labels = Array.from({length: 12}, (_, i) => `${(new Date().getHours() - 11 + i + 24) % 24}:00`);
+        
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Улица (°C)',
+                        data: [10.2, 9.8, 9.5, 10.1, 11.4, 12.8, 13.5, 14.1, 14.5, 14.3, 14.0, 14.2],
+                        borderColor: '#38bdf8',
+                        backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    },
+                    {
+                        label: 'Дом (°C)',
+                        data: [22.1, 22.0, 21.8, 21.9, 22.0, 22.2, 22.4, 22.5, 22.6, 22.5, 22.5, 22.5],
+                        borderColor: '#818cf8',
+                        backgroundColor: 'transparent',
+                        borderDash: [5, 5],
+                        tension: 0.4
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { grid: { color: '#334155' }, ticks: { color: '#94a3b8' } },
+                    x: { grid: { display: false }, ticks: { color: '#94a3b8' } }
+                }
+            }
+        });
+
+        function fetchWeatherData() {
+            const mockData = {
+                outTemp: 14.2 + (Math.random() * 0.4 - 0.2),
+                outHum: 68 + (Math.random() * 2 - 1),
+                inTemp: 22.5 + (Math.random() * 0.2 - 0.1),
+                inHum: 45 + (Math.random() * 1 - 0.5),
+                pressureMm: 748 + (Math.random() * 0.5 - 0.25),
+                co2: 620 + (Math.random() * 30 - 15),
+                pm25: 8 + (Math.random() * 2 - 1)
+            };
+
+            document.getElementById('out-temp').textContent = mockData.outTemp.toFixed(1);
+            document.getElementById('cam-osd-temp').textContent = `${mockData.outTemp.toFixed(1)}°C`;
+            document.getElementById('out-feels').textContent = (mockData.outTemp - 1.2).toFixed(1);
+            document.getElementById('out-hum').textContent = Math.round(mockData.outHum);
+            document.getElementById('in-temp').textContent = mockData.inTemp.toFixed(1);
+            document.getElementById('in-hum').textContent = Math.round(mockData.inHum);
+            document.getElementById('pressure').textContent = Math.round(mockData.pressureMm);
+            document.getElementById('pressure-hpa').textContent = Math.round(mockData.pressureMm * 1.33322);
+            document.getElementById('co2').textContent = Math.round(mockData.co2);
+            document.getElementById('pm25').textContent = Math.round(mockData.pm25);
+            document.getElementById('last-update').textContent = `Обновлено: ${new Date().toLocaleTimeString('ru-RU')}`;
+        }
+
+        // Старт всех модулей
+        initMiniAppEnvironment();
+        loadMessengerUI();
+        renderDevices();
+        fetchWeatherData();
+        setInterval(fetchWeatherData, 5000);
+    </script>
+</body>
+</html>
